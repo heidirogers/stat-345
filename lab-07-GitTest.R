@@ -7,3 +7,5 @@ gitcreds::gitcreds_set("https://github.com/heidirogers/stat-345")
 # this is test code
 
 1 + 2 + 3 + 4 + 5
+
+# last test
