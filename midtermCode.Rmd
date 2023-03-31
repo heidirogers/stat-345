@@ -1,0 +1,114 @@
+---
+title: "Midterm Code"
+output: html_document
+date: "2023-03-30"
+---
+
+### Code
+
+```{r}
+## 1. Load all necessary packages ##
+
+# Uses include:
+# - gathering data
+# - grabbing online images
+# - building plots
+# - animating plots
+# - formatting graphics
+
+library(devtools); devtools::install_github("abresler/nbastatR")
+library(nbastatR); Sys.setenv("VROOM_CONNECTION_SIZE" = 131072*2) # all data comes from nbastatR package
+library(ggplot2)
+library(grid)
+library(jpeg)
+library(RCurl)
+library(gganimate)
+library(lubridate)
+library(transformr)
+library(magick)
+library(maps)
+library(mapdata)
+library(gifski)
+library(tidyverse)
+library(hrbrthemes)
+
+## 2. Gather and clean the data ##
+
+# all data used is coming from the nbastatR package.
+
+# get_team_shots is a function for putting together basketball data sets over multiple years since we cannot call multiple years at once directly from nbastatR::teams_shots
+# inputs are a vector of numeric years (years_desired) and a string name of a team (team_name)
+# returns a data frame (all_team_data) of shot data from the nbastatR package for all years desired of specified team
+
+get_team_shots <- function(years_desired, team_name){
+  all_team_data <- data.frame()
+  for(i in years_desired){
+    year_data <- teams_shots(teams = team_name, seasons = i)
+    all_team_data <- rbind(all_team_data, year_data)
+  }
+  return(all_team_data)
+}
+
+# Call the function to retrieve data frame of timberwolves shot data from 2000-2010
+# I am interested in this time period because during this time, the Timberwolves hit their peak performance compared to the most recent decade in which they haven't been doing so well.
+wolves_data <- remove_missing(get_team_shots(2000:2010, "Minnesota Timberwolves"))
+
+
+## 3. Produce shot plot animation ##
+
+# Define team colors to use in graphic
+colors = c("dark green","navy blue")
+
+# Read in basketball court image to be overlaid on the shot plot
+courtImg.URL <- "https://thedatagame.files.wordpress.com/2016/03/nba_court.jpg"
+court <- rasterGrob(readJPEG(getURLContent(courtImg.URL)),
+           width = unit(1,"npc"), height = unit(1,"npc"))
+
+# Create a scatter plot of where on the court shots were taken (named locationX and location Y) with data points distinguished by whether or not the shot was made
+shot_plot <- ggplot(aes(x = locationX, y = locationY), data = wolves_data) + 
+      annotation_custom(court, -270, 275, -10, 450) +  # overlay basketball court imgae
+      geom_point(aes(color = isShotMade), alpha = 0.2) +  # change color of points to correspond to if the shot was made, change transparency of points using alpha to make the plot more readable as many points fall on top of each other
+      scale_color_manual(values = colors, name = " Was The Shot Made?", label = c('Yes','No')) + # create legend
+      xlim(-250, 250) + ylim(0, 420) +  # where the court image should be placed on the graph
+      xlab("Court Width (in.)") + ylab("Court Length (in.)") +  # label x and y axis
+      transition_time(yearSeason) +  # add transition of plots between years to show changing shot positions over time
+      labs(title = "Shots Taken by the Timberwolves in Season: {frame_time}") +  # add transitional title to match transitioning data
+      theme_minimal()  # change style of plot
+
+# Animate the transitional shot plot from above using magick renderer over 11 years with speed of 1 frame per second
+animate(plot = shot_plot, renderer = magick_renderer(), nframes = 11, fps = 1) 
+
+
+## 4. Create additional graphic: wins and losses ##
+
+# Obtain all teams statistics from nbastatR package and store in team_stats
+team_stats <- teams_annual_stats()
+
+# Rid of all teams besides the Timberwolves using filter, and rid of all columns besides those that show team name, year, number of wins, and number of losses using select
+wolves_w_l <- team_stats %>% filter(teamName == "Timberwolves") %>% select(teamName, slugSeason, wins, losses)
+
+# Reformat 'slugSeason' column by replacing the end of the string to make the year more readable and turn it into a numeric type instead of character
+year_pattern <- '-\\d{2}$'
+wolves_w_l$slugSeason <- as.numeric(str_replace(wolves_w_l$slugSeason, year_pattern, ""))
+
+# Build a line graph of connected points indicating number of wins and losses of the timberwolves for each year of data available, using team colors
+ggplot(aes(x = slugSeason, y = wins), data = wolves_w_l) +
+  geom_point(aes(x = slugSeason, y = wins, color = "dark green"), data = wolves_w_l) + # points for of wins
+  geom_point(aes(x = slugSeason, y = losses, color = "navy blue"), data = wolves_w_l) +  # points for losses
+  geom_line(aes(x = slugSeason, y = wins, color = "dark green"), data = wolves_w_l) +  # connect points with lines
+  geom_line(aes(x = slugSeason, y = losses, color = "navy blue"), data = wolves_w_l) +
+  labs(x = "Season", y = "Number of Wins or Losses", title = "Timberwolves Success Over Time") +  # label x and y axis and give it a title
+  scale_color_identity(name = "Game Outcome", 
+                       breaks = c("dark green", "navy blue"), 
+                       labels = c("Wins", "Losses"), 
+                       guide = "legend") +  # add a legend to the graph corresponding to win/loss lines
+  theme_ipsum()  # change style of plot
+```
+
+### Results
+
+Within the animated shot plot, we can see multiple patterns of where shots are taken. In general, there is usually a greater amount of shots clustered around the hoop. This shot pattern also extends across the bottom edge of the court which is seen with with the plot being darker (more points) in this area. The other two patterns observed take the shape of semi circles further out from the hoop. There is one distinct cluster of shots that follow the three-point line, and another cluster with the same shape but slightly closer, in between the three-point line and the hoop.
+
+There is no clear spot on the court in which shots are more often made (more green) or more often missed (more blue). This would suggest that the shot being made likely has more to do with a players skill level than where on the court they are, at least for the Timberwolves. It is interesting to note that of few shots made beyond the three-point line up to half court were mostly made despite it being a very far distance. There were also shots taken from the other side of the court, however this was not included to because these are not typical game shots and we wanted to keep the focus on the opponents end of the court.
+
+When looking at the graph of wins and losses for the Timberwolves, it is clear that they peaked from the mid 1990's to mid 2000's with their best season (based on wins alone) being 2003. This is based on the fact that the winning line (green) is above the losing line (blue) for eight consecutive years here. 2003 was the year that the Timberwolves won the most games as well as lost the fewest. Besides this short time period, the team has only had three other seasons in which they won more games than they lost, however, they are currently playing better in terms of W-L percentage than they have been in the past decade.
